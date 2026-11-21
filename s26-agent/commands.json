@@ -1,0 +1,103 @@
+{
+  "commands": [
+    {
+      "pattern": "\\b(what.?s the time|what time|the time|current time|clock)\\b",
+      "action": "say",
+      "say": "It's {time}."
+    },
+    {
+      "pattern": "\\bbattery\\b",
+      "action": "say",
+      "say": "{battery}"
+    },
+    {
+      "pattern": "\\bopen\\s+([a-z]+)\\s+settings?\\b",
+      "action": "open_settings",
+      "group_into": {
+        "target": 1
+      },
+      "say": "Opening {g1} settings."
+    },
+    {
+      "pattern": "\\bwi-?fi\\b",
+      "requires": "\\b(on|off|enable|disable|turn)\\b",
+      "action": "toggle",
+      "args": {
+        "target": "wifi"
+      },
+      "on_from_text": true,
+      "say": "Turning wifi {onoff}."
+    },
+    {
+      "pattern": "\\bbluetooth\\b",
+      "requires": "\\b(on|off|enable|disable|turn)\\b",
+      "action": "toggle",
+      "args": {
+        "target": "bluetooth"
+      },
+      "on_from_text": true,
+      "say": "Turning bluetooth {onoff}."
+    },
+    {
+      "pattern": "\\b(mobile data|cellular|data)\\b",
+      "requires": "\\b(on|off|enable|disable|turn)\\b",
+      "action": "toggle",
+      "args": {
+        "target": "data"
+      },
+      "on_from_text": true,
+      "say": "Turning data {onoff}."
+    },
+    {
+      "pattern": "\\b(flashlight|torch|light)\\b",
+      "action": "torch",
+      "on_from_text": true,
+      "say": "Flashlight {onoff}."
+    },
+    {
+      "pattern": "\\borganize\\b",
+      "action": "organize",
+      "args": {
+        "path": "downloads"
+      },
+      "say": "Organizing your downloads."
+    },
+    {
+      "pattern": "\\b(list|show|what)\\b.*\\b(download|downloads|folder)\\b",
+      "action": "list_dir",
+      "args": {
+        "path": "downloads"
+      },
+      "say": "Here's your downloads."
+    },
+    {
+      "pattern": "\\b(clipboard|what did i copy)\\b",
+      "action": "clipboard_get",
+      "say": "Reading clipboard."
+    },
+    {
+      "pattern": "\\bvolume\\b",
+      "action": "volume",
+      "args": {
+        "stream": "music"
+      },
+      "value_into": "level",
+      "say": "Setting volume to {value}."
+    },
+    {
+      "pattern": "\\b(hi|hello|hey)\\b",
+      "action": "say",
+      "say": "Hey \u2014 what do you need?"
+    },
+    {
+      "pattern": "\\b(who are you|what are you|what can you do)\\b",
+      "action": "say",
+      "say": "I'm your on-device agent. I can change settings, toggle radios, organize files, read battery and clipboard, and run developer adb commands \u2014 just tell me."
+    },
+    {
+      "pattern": "\\b(sync|update actions|pull actions)\\b",
+      "action": "__sync__",
+      "say": ""
+    }
+  ]
+}

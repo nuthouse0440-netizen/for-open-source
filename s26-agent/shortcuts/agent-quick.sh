@@ -14,6 +14,7 @@ PRESETS=(
   "Open Wi-Fi settings=open wifi settings"
   "Open Bluetooth settings=open bluetooth settings"
   "Open Display settings=open display settings"
+  "Sync actions from GitHub=sync"
 )
 
 labels=""

@@ -42,7 +42,13 @@ import sys
 import urllib.request
 
 SERVER = "http://127.0.0.1:8080/v1/chat/completions"
-LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent.log")
+HERE = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(HERE, "agent.log")
+# Actions/responses are pulled from GitHub and cached here (core stays local).
+COMMANDS_FILE = os.path.join(HERE, "commands.json")
+GITHUB_COMMANDS_URL = ("https://raw.githubusercontent.com/nuthouse0440-netizen/"
+                       "for-open-source/claude/repo-persistence-automation-9jmhzm/"
+                       "s26-agent/commands.json")
 
 ALLOW_SMS = "--allow-sms" in sys.argv
 # Developer adb (over Wireless Debugging): enables BOTH settings changes and
@@ -485,51 +491,115 @@ def battery_say():
     return "I can't read the battery right now."
 
 
+# ---- actions/responses: CORE defaults here, overridable from GitHub ----------
+# The engine (this file) is the local core. commands.json holds the actual
+# command->action rules + canned responses, pulled from GitHub and cached in
+# COMMANDS_FILE. Edit the repo, run `sync`, and behavior updates with no code
+# change. If no cached file exists, these built-in defaults are used.
+DEFAULT_COMMANDS = [
+    {"pattern": r"\b(what.?s the time|what time|the time|current time|clock)\b",
+     "action": "say", "say": "It's {time}."},
+    {"pattern": r"\bbattery\b", "action": "say", "say": "{battery}"},
+    {"pattern": r"\bopen\s+([a-z]+)\s+settings?\b", "action": "open_settings",
+     "group_into": {"target": 1}, "say": "Opening {g1} settings."},
+    {"pattern": r"\bwi-?fi\b", "requires": r"\b(on|off|enable|disable|turn)\b",
+     "action": "toggle", "args": {"target": "wifi"}, "on_from_text": True,
+     "say": "Turning wifi {onoff}."},
+    {"pattern": r"\bbluetooth\b", "requires": r"\b(on|off|enable|disable|turn)\b",
+     "action": "toggle", "args": {"target": "bluetooth"}, "on_from_text": True,
+     "say": "Turning bluetooth {onoff}."},
+    {"pattern": r"\b(mobile data|cellular|data)\b",
+     "requires": r"\b(on|off|enable|disable|turn)\b",
+     "action": "toggle", "args": {"target": "data"}, "on_from_text": True,
+     "say": "Turning data {onoff}."},
+    {"pattern": r"\b(flashlight|torch|light)\b", "action": "torch",
+     "on_from_text": True, "say": "Flashlight {onoff}."},
+    {"pattern": r"\borganize\b", "action": "organize", "args": {"path": "downloads"},
+     "say": "Organizing your downloads."},
+    {"pattern": r"\b(list|show|what)\b.*\b(download|downloads|folder)\b",
+     "action": "list_dir", "args": {"path": "downloads"}, "say": "Here's your downloads."},
+    {"pattern": r"\b(clipboard|what did i copy)\b", "action": "clipboard_get",
+     "say": "Reading clipboard."},
+    {"pattern": r"\bvolume\b", "action": "volume", "args": {"stream": "music"},
+     "value_into": "level", "say": "Setting volume to {value}."},
+    {"pattern": r"\b(hi|hello|hey)\b", "action": "say", "say": "Hey — what do you need?"},
+    {"pattern": r"\b(who are you|what are you|what can you do)\b", "action": "say",
+     "say": "I'm your on-device agent. I can change settings, toggle radios, "
+            "organize files, read battery and clipboard, and run developer adb "
+            "commands — just tell me."},
+    {"pattern": r"\b(sync|update actions|pull actions)\b", "action": "__sync__",
+     "say": ""},
+]
+
+
+def load_commands():
+    """Load the GitHub-synced command set if cached, else the built-in defaults."""
+    try:
+        with open(COMMANDS_FILE) as f:
+            data = json.load(f)
+        cmds = data.get("commands")
+        if isinstance(cmds, list) and cmds:
+            return cmds
+    except Exception:
+        pass
+    return DEFAULT_COMMANDS
+
+
+def sync_commands():
+    """Pull the latest actions/responses from GitHub and cache them locally."""
+    try:
+        req = urllib.request.Request(GITHUB_COMMANDS_URL,
+                                     headers={"User-Agent": "s26-agent"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = r.read()
+        obj = json.loads(raw)                 # validate before writing
+        n = len(obj.get("commands", []))
+        with open(COMMANDS_FILE, "wb") as f:
+            f.write(raw)
+        return f"Synced {n} actions/responses from GitHub."
+    except Exception as e:
+        return f"Sync failed ({e}). Keeping current actions."
+
+
+def _apply_command(c, text, mobj):
+    args = dict(c.get("args", {}))
+    say = c.get("say", "")
+    low = text.lower()
+    if c.get("on_from_text"):
+        on = not re.search(r"\b(off|disable|out|stop|kill)\b", low)
+        args["on"] = on
+        say = say.replace("{onoff}", "on" if on else "off")
+    if "value_into" in c:
+        mn = re.search(r"(\d{1,3})", text)
+        if mn:
+            args[c["value_into"]] = int(mn.group(1))
+            say = say.replace("{value}", mn.group(1))
+    for arg, gi in c.get("group_into", {}).items():
+        try:
+            val = mobj.group(int(gi)) or ""
+            args[arg] = val
+            say = say.replace("{g%s}" % gi, val)
+        except Exception:
+            pass
+    say = say.replace("{time}", datetime.datetime.now().strftime("%I:%M %p").lstrip("0"))
+    say = say.replace("{battery}", battery_say())
+    return {"action": c["action"], "args": args, "say": say}
+
+
 def rule_match(text):
-    """Deterministic command -> action mapping. Returns an action dict (or None
-    to fall back to the model). This is what makes the agent reliably actionable:
-    known commands never depend on the model's judgment."""
-    t = " " + text.lower().strip() + " "
-
-    if re.search(r"\b(what.?s the time|what time|the time|current time|clock)\b", t):
-        now = datetime.datetime.now().strftime("%I:%M %p").lstrip("0")
-        return {"action": "say", "args": {}, "say": f"It's {now}."}
-    if re.search(r"\bbattery\b", t):
-        return {"action": "say", "args": {}, "say": battery_say()}
-    if re.search(r"\b(flashlight|torch)\b", t) or re.search(r"\blight\b", t):
-        on = not re.search(r"\b(off|out|stop|kill)\b", t)
-        return {"action": "torch", "args": {"on": on},
-                "say": "Flashlight " + ("on." if on else "off.")}
-
-    m = re.search(r"\b(wi-?fi|bluetooth|mobile data|data)\b", t)
-    if m:
-        g = m.group(1)
-        target = "wifi" if "fi" in g else ("bluetooth" if "blue" in g else "data")
-        if re.search(r"\b(open|show|go to)\b", t) or not re.search(
-                r"\b(on|off|enable|disable|turn)\b", t):
-            return {"action": "open_settings", "args": {"target": target},
-                    "say": f"Opening {target} settings."}
-        on = not re.search(r"\b(off|disable)\b", t)
-        return {"action": "toggle", "args": {"target": target, "on": on},
-                "say": f"Turning {target} {'on' if on else 'off'}."}
-
-    m = re.search(r"\bopen\s+([a-z]+)\s+settings?\b", t)
-    if m:
-        return {"action": "open_settings", "args": {"target": m.group(1)},
-                "say": f"Opening {m.group(1)} settings."}
-    if re.search(r"\borganize\b", t):
-        return {"action": "organize", "args": {"path": "downloads"},
-                "say": "Organizing your downloads."}
-    if re.search(r"\b(list|show|what)\b", t) and re.search(
-            r"\b(download|downloads|folder)\b", t):
-        return {"action": "list_dir", "args": {"path": "downloads"},
-                "say": "Here's your downloads."}
-    if re.search(r"\b(clipboard|what did i copy)\b", t):
-        return {"action": "clipboard_get", "args": {}, "say": "Reading clipboard."}
-    m = re.search(r"\bvolume\b.*?(\d{1,2})", t)
-    if m:
-        return {"action": "volume", "args": {"stream": "music", "level": int(m.group(1))},
-                "say": f"Setting volume to {m.group(1)}."}
+    """Match the user's words to an action using the (GitHub-synced) command set.
+    First match wins; returns an action dict, or None to fall back to the model."""
+    low = text.lower()
+    for c in load_commands():
+        try:
+            mobj = re.search(c["pattern"], low)
+        except (re.error, KeyError):
+            continue
+        if not mobj:
+            continue
+        if "requires" in c and not re.search(c["requires"], low):
+            continue
+        return _apply_command(c, text, mobj)
     return None
 
 
@@ -620,6 +690,10 @@ def handle(text):
     # 1) Deterministic command layer — reliable, no model guessing.
     ruled = rule_match(text)
     if ruled is not None:
+        if ruled.get("action") == "__sync__":     # pull latest actions from GitHub
+            log("RULE", "__sync__")
+            speak(sync_commands())
+            return
         log("RULE", json.dumps(ruled.get("action")) + " " + json.dumps(ruled.get("args", {})))
         log("RESULT", run_action(ruled))
         return
@@ -646,6 +720,10 @@ def handle(text):
 
 
 def main():
+    if "--sync" in sys.argv:                  # pull latest actions/responses
+        print(sync_commands())
+        if not ARGS:
+            return
     if ARGS:
         handle(" ".join(ARGS))
         return
