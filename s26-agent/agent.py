@@ -108,6 +108,21 @@ Actions and args:
 - adb_shell {command}            run a developer adb shell command on the device
 - send_sms {number, text}
 
+VERY IMPORTANT: If the user asks a question, chats, or wants information, use
+action "say" and put the answer in "say". The current time (datetime) and
+battery are already in the Live device context — read them from there and just
+say them. Only use a NON-"say" action when the user explicitly asks you to DO
+that thing (organize files, change a setting, toggle something, etc.).
+
+Examples:
+user: what time is it -> {"action":"say","args":{},"say":"It's 3:42 PM."}
+user: how is my battery -> {"action":"say","args":{},"say":"74% and charging."}
+user: tell me a joke -> {"action":"say","args":{},"say":"Why did the phone..."}
+user: organize my downloads -> {"action":"organize","args":{"path":"downloads"},"say":"Organizing downloads."}
+user: turn on the flashlight -> {"action":"torch","args":{"on":true},"say":"Flashlight on."}
+user: open wifi settings -> {"action":"open_settings","args":{"target":"wifi"},"say":"Opening Wi-Fi settings."}
+user: what's in my downloads -> {"action":"list_dir","args":{"path":"downloads"},"say":"Here's your downloads."}
+
 If a task needs several steps, reply with a JSON ARRAY of these objects, in order.
 
 Prefer put_setting/toggle for actually changing a setting; use open_settings only
