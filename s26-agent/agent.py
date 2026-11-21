@@ -473,6 +473,66 @@ def parse_action(text):
     return {"action": "say", "args": {}, "say": text}
 
 
+def battery_say():
+    if have("termux-battery-status"):
+        try:
+            d = json.loads(subprocess.run(["termux-battery-status"],
+                           capture_output=True, text=True, timeout=10).stdout)
+            pct, st = d.get("percentage", "?"), str(d.get("status", "")).lower()
+            return f"Battery is {pct}%" + (" and charging." if st == "charging" else ".")
+        except Exception:
+            pass
+    return "I can't read the battery right now."
+
+
+def rule_match(text):
+    """Deterministic command -> action mapping. Returns an action dict (or None
+    to fall back to the model). This is what makes the agent reliably actionable:
+    known commands never depend on the model's judgment."""
+    t = " " + text.lower().strip() + " "
+
+    if re.search(r"\b(what.?s the time|what time|the time|current time|clock)\b", t):
+        now = datetime.datetime.now().strftime("%I:%M %p").lstrip("0")
+        return {"action": "say", "args": {}, "say": f"It's {now}."}
+    if re.search(r"\bbattery\b", t):
+        return {"action": "say", "args": {}, "say": battery_say()}
+    if re.search(r"\b(flashlight|torch)\b", t) or re.search(r"\blight\b", t):
+        on = not re.search(r"\b(off|out|stop|kill)\b", t)
+        return {"action": "torch", "args": {"on": on},
+                "say": "Flashlight " + ("on." if on else "off.")}
+
+    m = re.search(r"\b(wi-?fi|bluetooth|mobile data|data)\b", t)
+    if m:
+        g = m.group(1)
+        target = "wifi" if "fi" in g else ("bluetooth" if "blue" in g else "data")
+        if re.search(r"\b(open|show|go to)\b", t) or not re.search(
+                r"\b(on|off|enable|disable|turn)\b", t):
+            return {"action": "open_settings", "args": {"target": target},
+                    "say": f"Opening {target} settings."}
+        on = not re.search(r"\b(off|disable)\b", t)
+        return {"action": "toggle", "args": {"target": target, "on": on},
+                "say": f"Turning {target} {'on' if on else 'off'}."}
+
+    m = re.search(r"\bopen\s+([a-z]+)\s+settings?\b", t)
+    if m:
+        return {"action": "open_settings", "args": {"target": m.group(1)},
+                "say": f"Opening {m.group(1)} settings."}
+    if re.search(r"\borganize\b", t):
+        return {"action": "organize", "args": {"path": "downloads"},
+                "say": "Organizing your downloads."}
+    if re.search(r"\b(list|show|what)\b", t) and re.search(
+            r"\b(download|downloads|folder)\b", t):
+        return {"action": "list_dir", "args": {"path": "downloads"},
+                "say": "Here's your downloads."}
+    if re.search(r"\b(clipboard|what did i copy)\b", t):
+        return {"action": "clipboard_get", "args": {}, "say": "Reading clipboard."}
+    m = re.search(r"\bvolume\b.*?(\d{1,2})", t)
+    if m:
+        return {"action": "volume", "args": {"stream": "music", "level": int(m.group(1))},
+                "say": f"Setting volume to {m.group(1)}."}
+    return None
+
+
 def parse_actions(text):
     """Return a list of action objects. The model may reply with a single
     object or a JSON array of them (a multi-step task)."""
@@ -555,6 +615,16 @@ def get_input():
 def handle(text):
     if not text:
         return
+    log("YOU", text)
+
+    # 1) Deterministic command layer — reliable, no model guessing.
+    ruled = rule_match(text)
+    if ruled is not None:
+        log("RULE", json.dumps(ruled.get("action")) + " " + json.dumps(ruled.get("args", {})))
+        log("RESULT", run_action(ruled))
+        return
+
+    # 2) Fall back to the model only for freeform requests.
     try:
         reply = ask_model(text)
     except Exception as e:
@@ -563,7 +633,6 @@ def handle(text):
         log("ERROR", msg)
         speak(msg)
         return
-    log("YOU", text)
     log("THINK", reply)                       # the model's raw output = its "thoughts"
     actions = parse_actions(reply)
     if len(actions) > 1:
