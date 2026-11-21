@@ -87,17 +87,67 @@
     {
       "pattern": "\\b(hi|hello|hey)\\b",
       "action": "say",
-      "say": "Hey \u2014 what do you need?"
+      "say": "Hey — what do you need?"
     },
     {
       "pattern": "\\b(who are you|what are you|what can you do)\\b",
       "action": "say",
-      "say": "I'm your on-device agent. I can change settings, toggle radios, organize files, read battery and clipboard, and run developer adb commands \u2014 just tell me."
+      "say": "I'm your on-device agent. I can change settings, toggle radios, organize files, read battery and clipboard, and run developer adb commands — just tell me."
     },
     {
       "pattern": "\\b(sync|update actions|pull actions)\\b",
       "action": "__sync__",
       "say": ""
+    }
+  ],
+  "quick_actions": [
+    {
+      "label": "🕐 Time",
+      "cmd": "what time is it"
+    },
+    {
+      "label": "🔋 Battery",
+      "cmd": "battery"
+    },
+    {
+      "label": "🔦 Flash On",
+      "cmd": "flashlight on"
+    },
+    {
+      "label": "🔦 Flash Off",
+      "cmd": "flashlight off"
+    },
+    {
+      "label": "📂 Organize Downloads",
+      "cmd": "organize downloads"
+    },
+    {
+      "label": "📄 List Downloads",
+      "cmd": "what is in my downloads"
+    },
+    {
+      "label": "📋 Clipboard",
+      "cmd": "read clipboard"
+    },
+    {
+      "label": "📶 Wi-Fi Settings",
+      "cmd": "open wifi settings"
+    },
+    {
+      "label": "🔵 Bluetooth Settings",
+      "cmd": "open bluetooth settings"
+    },
+    {
+      "label": "🔆 Display Settings",
+      "cmd": "open display settings"
+    },
+    {
+      "label": "🔊 Volume 8",
+      "cmd": "set volume to 8"
+    },
+    {
+      "label": "🔁 Sync Actions",
+      "cmd": "sync"
     }
   ]
 }
