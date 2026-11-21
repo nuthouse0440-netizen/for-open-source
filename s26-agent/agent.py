@@ -425,12 +425,14 @@ def do_adb_shell(cmd):
 
 # ---------------- model call + dispatch ----------------
 def ask_model(user_text):
+    # Fold everything into ONE user message. Some chat templates (e.g. Gemma)
+    # reject a separate 'system' role and require roles to alternate
+    # user/assistant, so a single user turn is the most portable.
+    prompt = (SYSTEM_PROMPT
+              + "\n\nLive device context: " + json.dumps(device_context())
+              + "\n\nUser request: " + user_text)
     payload = {
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "system", "content": "Live context: " + json.dumps(device_context())},
-            {"role": "user", "content": user_text},
-        ],
+        "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.3, "max_tokens": 256,
     }
     req = urllib.request.Request(SERVER, data=json.dumps(payload).encode(),
